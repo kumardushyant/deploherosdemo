@@ -1,8 +1,10 @@
+# name space to host everything
 apiVersion: v1
 kind: Namespace
 metadata:
   name: svcquarkusdemo
 ---
+# credentials for postgres
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,9 +15,10 @@ metadata:
     app: postgres
 data:
   POSTGRES_DB: herosdb
-  POSTGRES_USER: admin
+  POSTGRES_USER: kubeadmin
   POSTGRES_PASSWORD: passw0rd
 ---
+# postgres database deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -43,20 +46,97 @@ spec:
         ports:
         - containerPort: 5432
 ---
+# postgres expose service
 apiVersion: v1
 kind: Service
 metadata:
   labels:
+    module: heros
     app: postgres
   name: postgresql
   namespace: svcquarkusdemo
 spec:
   ports:
-  - nodePort: 31825
-    port: 5432
+  - port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: postgres
+---
+# postgres expose to outside
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    module: heros
+    app: postgres
+  name: postgresql
+  namespace: svcquarkusdemo
+spec:
+  ports:
+  - port: 5433
     protocol: TCP
     targetPort: 5432
   selector:
     app: postgres
   type: LoadBalancer
-        
+---
+# heros config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: svcquarkusdemo
+  name: herossvc-configuration
+  labels:
+    module: heros
+    app: herossvc
+data:
+  quarkus.datasource.herodb.jdbc.url: jdbc:postgresql://postgresql:5432/herosdb
+  quarkus.datasource.herodb.username: kubeadmin
+  quarkus.datasource.herodb.password: passw0rd
+---
+# heros deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: svcquarkusdemo
+  name: herossvc-deploy
+  labels:
+    module: heros
+    app: herossvc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: herossvc
+  template:
+    metadata:
+      labels:
+        app: herossvc
+    spec:
+      containers:
+      - name: hrossvc
+        image: 211202345650.dkr.ecr.us-east-2.amazonaws.com/heroquarkus:1.0
+        envFrom:
+        - configMapRef:
+            name: herossvc-configuration
+        ports:
+        - containerPort: 8080
+---
+# heros service
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    module: heros
+    app: herossvc
+  name: herossvc
+  namespace: svcquarkusdemo
+spec:
+  ports:
+  - port: 8081
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: herossvc
+  type: LoadBalancer
